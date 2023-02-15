@@ -9,6 +9,8 @@ use std::{
 use tracing::{Id, Subscriber};
 use tracing_subscriber::{registry::LookupSpan, Layer};
 
+pub mod clustering;
+
 /// An in-progress span being recorded.
 struct InProgressSpanInfo {
     /// The number of time each child work (event or span) is encountered.
