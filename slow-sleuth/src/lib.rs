@@ -108,8 +108,8 @@ where
     }
 }
 
-/// Parameters for creating a separate thread to handle classification and clustering.
-pub struct ClusteringThreadParameters<W> {
+/// Parameters for creating a sleuth with a separate thread to handle classification and clustering.
+pub struct ClusteringSleuthParameters<W> {
     /// The output for formatted cluster information.
     pub output: W,
     /// The period for outputing cluster information (e.g. if 10 seconds will output every 10 seconds).
@@ -120,7 +120,7 @@ pub struct ClusteringThreadParameters<W> {
     pub channel_limit: usize,
 }
 
-impl<W> ClusteringThreadParameters<W> {
+impl<W> ClusteringSleuthParameters<W> {
     pub fn new(output: W) -> Self {
         Self {
             output,
@@ -131,30 +131,29 @@ impl<W> ClusteringThreadParameters<W> {
     }
 }
 
-/// Information about the thread spawned for classifying information.
-pub struct ClusteringThreadInfo<W> {
-    /// Join handle for the thread.
+/// Information about the sleuth created with a thread spawned for classifying information.
+pub struct ClusteringSleuthInfo<W> {
+    /// Join handle for the thread. Can be joined once the sleuth is done and dropped.
     pub thread: JoinHandle<io::Result<W>>,
-    /// Channel sender fr span information to the thread.
-    /// Can be used as the `SpanInfoConsumer` for creating a `Sleuth`.
-    pub info_sender: mpsc::SyncSender<SpanInfo>,
+    /// The `Sleuth` created - can be added as a layer for a tracing subscriber.
+    pub sleuth: Sleuth<mpsc::SyncSender<SpanInfo>>,
 }
 
-/// Spawna a separate thread for clustering and classifying timings for spans.
-pub fn spawn_clustering_thread<W>(
-    mut parameters: ClusteringThreadParameters<W>,
-) -> ClusteringThreadInfo<W>
+/// Creates a new Sleuth that clusters spans and periodically outputs information about the clusters.
+pub fn sleuth_with_clustering_thread<W>(
+    mut parameters: ClusteringSleuthParameters<W>,
+) -> ClusteringSleuthInfo<W>
 where
     W: Write + Send + 'static,
 {
-    let (info_sender, rx) = mpsc::sync_channel(parameters.channel_limit);
+    let (tx, rx) = mpsc::sync_channel(parameters.channel_limit);
     let thread = spawn(move || {
         let mut clustering = SleuthClassifier::new(parameters.clustering_parameters);
         let mut next_output = Instant::now() + parameters.output_period;
         while let Ok(span) = rx.recv() {
             clustering.learn_span(span);
             if next_output <= Instant::now() {
-                output_clusters(&mut parameters.output, clustering.clusters())?;
+                output_clusters(&mut parameters.output, clustering.clusters_with_reset())?;
                 next_output = Instant::now() + parameters.output_period;
             }
         }
@@ -162,10 +161,8 @@ where
         output_clusters(&mut parameters.output, clustering.clusters())?;
         Ok(parameters.output)
     });
-    ClusteringThreadInfo {
-        thread,
-        info_sender,
-    }
+    let sleuth = Sleuth::new(tx);
+    ClusteringSleuthInfo { thread, sleuth }
 }
 
 /// Output the cluster information in a formatted manner to the output.
@@ -256,17 +253,17 @@ mod tests {
     #[test]
     fn clustering_thread() {
         let output = Cursor::new(Vec::new());
-        let parameters = ClusteringThreadParameters::new(output);
-        let thread = spawn_clustering_thread(parameters);
+        let parameters = ClusteringSleuthParameters::new(output);
+        let sleuth_info = sleuth_with_clustering_thread(parameters);
         {
-            let subscriber = Registry::default().with(Sleuth::new(thread.info_sender));
+            let subscriber = Registry::default().with(sleuth_info.sleuth);
             tracing::subscriber::with_default(subscriber, || {
                 for _ in 0..100 {
                     work();
                 }
             });
         }
-        let output = thread.thread.join().unwrap().unwrap().into_inner();
+        let output = sleuth_info.thread.join().unwrap().unwrap().into_inner();
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("== work =="), "Invalid output: {output}");
         assert!(

@@ -254,6 +254,29 @@ impl SleuthClassifier {
             })
             .collect()
     }
+
+    /// Get the clusters learned so far, and reset the timings after getting them.
+    /// Useful for periodically getting the timings then starting a fresh period.
+    pub fn clusters_with_reset(&mut self) -> HashMap<&'static str, Vec<Cluster>> {
+        self.per_span_learner
+            .iter_mut()
+            .map(|(&name, learner)| {
+                let clusters = match learner {
+                    PerSpanTypeLearner::ClusterLearner(_) => vec![],
+                    PerSpanTypeLearner::Classifier(classifier) => classifier
+                        .clusters
+                        .iter_mut()
+                        .map(|(_, cluster)| {
+                            let clone = cluster.clone();
+                            cluster.timing_micros.reset();
+                            clone
+                        })
+                        .collect(),
+                };
+                (name, clusters)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
