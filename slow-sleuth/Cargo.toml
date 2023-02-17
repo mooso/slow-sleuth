@@ -2,8 +2,8 @@
 name = "slow-sleuth"
 version = "0.0.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Mostafa Elhemali"]
+description = "Library for automatically clustering tracing spans and outputting timing stats for each cluster"
 
 [dependencies]
 hdrhistogram = { version = "7" }
