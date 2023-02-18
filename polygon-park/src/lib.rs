@@ -1,0 +1,227 @@
+//! Toy library for simulating moving polygons that can collide with each other.
+
+use std::ops;
+
+use tracing::instrument;
+
+/// A point or a vector in the 2D space.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl ops::Sub for Point {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Point {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl ops::Neg for Point {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Point {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+
+impl ops::Mul<f32> for Point {
+    type Output = Self;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        Point {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
+    }
+}
+
+impl ops::Div<f32> for Point {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Point {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+
+impl Point {
+    /// Dot product of myself and another 2D vector
+    pub fn dot(&self, rhs: &Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y
+    }
+
+    /// The normal (perpendicular) of this 2D vector, *not* normalized to unit length.
+    pub fn normal(&self) -> Self {
+        Self {
+            x: -self.y,
+            y: self.x,
+        }
+    }
+
+    /// The magnitude of this 2D vector
+    pub fn magnitude(&self) -> f32 {
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
+    }
+
+    /// Normalize this 2D vector to unit length
+    pub fn normalize(&self) -> Self {
+        *self / self.magnitude()
+    }
+}
+
+/// A 2D polygon
+#[derive(Clone, PartialEq, Debug)]
+pub struct Polygon {
+    pub vertices: Vec<Point>,
+}
+
+/// An iterator over the edges of a polygon.
+pub struct Edges<'a> {
+    vertices: &'a Vec<Point>,
+    current_index: usize,
+}
+
+impl Iterator for Edges<'_> {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_index == self.vertices.len() {
+            return None;
+        }
+        let p1 = self.vertices.get(self.current_index).unwrap();
+        let p2 = self
+            .vertices
+            .get((self.current_index + 1) % self.vertices.len())
+            .unwrap();
+        self.current_index += 1;
+        Some(*p1 - *p2)
+    }
+}
+
+/// A projection of a shape onto an axis.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Projection {
+    /// The minimum of the projection.
+    pub min: f32,
+    /// The maximum of the projection.
+    pub max: f32,
+}
+
+impl Projection {
+    /// Checks if myself and the given projection overlap. If we do, return the overlap projection.
+    pub fn overlap(&self, rhs: &Self) -> Option<Projection> {
+        let projection = Projection {
+            min: self.min.max(rhs.min),
+            max: self.max.min(rhs.max),
+        };
+        if projection.min <= projection.max {
+            Some(projection)
+        } else {
+            None
+        }
+    }
+}
+
+impl Polygon {
+    /// Iterate over the edges of the polygon.
+    pub fn edges(&self) -> Edges<'_> {
+        Edges {
+            vertices: &self.vertices,
+            current_index: 0,
+        }
+    }
+
+    /// Project the polygon onto a given axis.
+    #[instrument]
+    pub fn project(&self, axis: Point) -> Projection {
+        let mut min = axis.dot(self.vertices.first().unwrap());
+        let mut max = min;
+        for p in self.vertices.iter().skip(1) {
+            let p = axis.dot(p);
+            if p < min {
+                min = p;
+            } else if p > max {
+                max = p;
+            }
+        }
+        Projection { min, max }
+    }
+
+    /// Check if this polygon collides with another given polygon. Returns false if not colliding.
+    pub fn check_collision(&self, other: &Self) -> bool {
+        // Check using an SAT (Separating Axis Theorem) algorithm.
+        // See e.g. https://dyn4j.org/2010/01/sat/ for a description.
+        for edge in self.edges().chain(other.edges()) {
+            let axis = edge.normal();
+            let p1 = self.project(axis);
+            let p2 = other.project(axis);
+            if p1.overlap(&p2).is_none() {
+                // If we find one axis in which the projections of the shapes don't overlap, they're not in collision
+                return false;
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn colliding() {
+        let p1 = Polygon {
+            vertices: vec![
+                Point { x: 0., y: 0. },
+                Point { x: 10., y: 0. },
+                Point { x: 10., y: 10. },
+                Point { x: 0., y: 10. },
+            ],
+        };
+        let p2 = Polygon {
+            vertices: vec![
+                Point { x: 9., y: 5. },
+                Point { x: 19., y: 5. },
+                Point { x: 19., y: 15. },
+                Point { x: 9., y: 15. },
+            ],
+        };
+        assert!(p2.check_collision(&p1));
+        assert!(p1.check_collision(&p2));
+        assert!(p2.check_collision(&p2));
+        assert!(p1.check_collision(&p1));
+    }
+
+    #[test]
+    fn far_apart() {
+        let p1 = Polygon {
+            vertices: vec![
+                Point { x: 0., y: 0. },
+                Point { x: 10., y: 0. },
+                Point { x: 10., y: 10. },
+                Point { x: 0., y: 10. },
+            ],
+        };
+        let p2 = Polygon {
+            vertices: vec![
+                Point { x: 25., y: 5. },
+                Point { x: 35., y: 5. },
+                Point { x: 35., y: 15. },
+                Point { x: 25., y: 15. },
+            ],
+        };
+        assert!(!p1.check_collision(&p2));
+        assert!(!p2.check_collision(&p1));
+    }
+}

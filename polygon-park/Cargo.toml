@@ -1,0 +1,9 @@
+[package]
+name = "polygon-park"
+version = "0.0.0"
+edition = "2021"
+authors = ["Mostafa Elhemali"]
+description = "Small library to simulate moving 2D polygons with collision detection. Mainly written to test out slow-sleuth."
+
+[dependencies]
+tracing = { version = "0" }

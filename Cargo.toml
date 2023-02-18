@@ -1,4 +1,5 @@
 [workspace]
 members = [
     "slow-sleuth",
+    "polygon-park",
 ]
