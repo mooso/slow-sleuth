@@ -2,4 +2,5 @@
 members = [
     "slow-sleuth",
     "polygon-park",
+    "polygon-park-wasm",
 ]

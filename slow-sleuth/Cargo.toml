@@ -4,6 +4,8 @@ version = "0.0.0"
 edition = "2021"
 authors = ["Mostafa Elhemali"]
 description = "Library for automatically clustering tracing spans and outputting timing stats for each cluster"
+license = "MIT"
+repository = "https://github.com/mooso/slow-sleuth"
 
 [dependencies]
 hdrhistogram = { version = "7" }

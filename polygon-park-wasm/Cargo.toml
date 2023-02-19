@@ -1,0 +1,18 @@
+[package]
+name = "polygon-park-wasm"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mostafa Elhemali"]
+description = "Small library to simulate moving 2D polygons in WASM with collision detection. Mainly written to test out slow-sleuth."
+license = "MIT"
+repository = "https://github.com/mooso/slow-sleuth"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+polygon-park = { path = '../polygon-park' }
+slow-sleuth = { path = '../slow-sleuth' }
+wasm-bindgen = { version = "0.2" }
+getrandom = { version = "0.2", features = ["js"] }
+rand = { version = "0.8" }

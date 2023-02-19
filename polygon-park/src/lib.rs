@@ -2,10 +2,11 @@
 
 use std::ops;
 
+use rand::Rng;
 use tracing::instrument;
 
 /// A point or a vector in the 2D space.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Point {
     pub x: f32,
     pub y: f32,
@@ -172,6 +173,62 @@ impl Polygon {
             }
         }
         true
+    }
+}
+
+/// A polygon in the park, that can move around.
+#[derive(Clone, PartialEq, Debug)]
+pub struct MovingPolygon {
+    /// The geometry and current location of the polygon.
+    pub geometry: Polygon,
+    /// The maass of the polygon (for better looking collisions).
+    pub mass: f32,
+    /// The color of the polygon.
+    pub color: u32,
+    /// The current velocity of the polygon, in units/second.
+    pub velocity: Point,
+}
+
+/// A polygon park! Full of moving exciting polygon.
+#[derive(Clone, PartialEq, Debug)]
+pub struct PolygonPark {
+    /// The polygons in the park.
+    pub polygons: Vec<MovingPolygon>,
+    /// The width of the park (x positions should all be confined to `0-width`).
+    pub width: f32,
+    /// The height of the park (y positions should all be confined to `0-height`).
+    pub height: f32,
+}
+
+impl PolygonPark {
+    /// Generate a new random park (full of exciting random polygons) of the given width/height.
+    pub fn new_random<R: Rng>(_rng: &mut R, width: f32, height: f32) -> PolygonPark {
+        // TODO: Actually randomly generate
+        let square = Polygon {
+            vertices: vec![
+                Point { x: 25., y: 5. },
+                Point { x: 35., y: 5. },
+                Point { x: 35., y: 15. },
+                Point { x: 25., y: 15. },
+            ],
+        };
+        let square = MovingPolygon {
+            geometry: square,
+            mass: 10.0,
+            color: 0x00DD00,
+            velocity: Default::default(),
+        };
+        PolygonPark {
+            polygons: vec![square],
+            width,
+            height,
+        }
+    }
+
+    /// Tick the park - simulate the movement by advancing time by the given number of milli-seconds.
+    #[instrument]
+    pub fn tick(&mut self, _millis_elapsed: f32) {
+        // TODO: Actually simulate
     }
 }
 
