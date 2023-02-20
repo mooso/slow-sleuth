@@ -227,8 +227,13 @@ impl PolygonPark {
 
     /// Tick the park - simulate the movement by advancing time by the given number of milli-seconds.
     #[instrument]
-    pub fn tick(&mut self, _millis_elapsed: f32) {
+    pub fn tick(&mut self, millis_elapsed: f32) {
         // TODO: Actually simulate
+        for polygon in self.polygons.iter_mut() {
+            for vertex in polygon.geometry.vertices.iter_mut() {
+                vertex.x += millis_elapsed / 10.;
+            }
+        }
     }
 }
 
