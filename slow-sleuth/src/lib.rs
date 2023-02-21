@@ -180,7 +180,7 @@ where
             writeln!(
                 output,
                 "{} - {}/{}/{}/{}",
-                cluster.name,
+                cluster.name(),
                 cluster.timing_micros.min(),
                 cluster.timing_micros.value_at_percentile(0.5),
                 cluster.timing_micros.value_at_quantile(0.99),
@@ -267,7 +267,7 @@ mod tests {
         let output = String::from_utf8(output).unwrap();
         assert!(output.contains("== work =="), "Invalid output: {output}");
         assert!(
-            output.contains("(sub_work: -0 - -0)"),
+            output.contains("(sub_work: 0 - 0)"),
             "Invalid output: {output}"
         );
     }

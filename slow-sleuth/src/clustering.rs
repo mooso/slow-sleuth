@@ -1,6 +1,6 @@
 //! Clustering for span information to cluster together similar-work spans and have timing statistics per cluster.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use hdrhistogram::Histogram;
 use itertools::Itertools;
@@ -97,13 +97,50 @@ fn vector_norm(vector: &[usize], maxima: &[usize]) -> f64 {
         .sqrt()
 }
 
+/// The range of counts for a given step in a cluster.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BinCountRange {
+    pub low: usize,
+    pub high: usize,
+}
+
+impl BinCountRange {
+    /// Construct the range from the label of the bin (which bin from 0 - N of N bins) given
+    /// the bin width and the max expected count.
+    /// For example - if this is the second bin and the bin width is 0.25, and we expected the
+    /// maximum to be 100, then the range for this bin should be 25 - 50.
+    fn from_bin_label(bin_label: usize, maximum: usize, bin_width: f64) -> BinCountRange {
+        let low = ((bin_label as f64) * bin_width * (maximum as f64)).round() as usize;
+        let high = (((bin_label + 1) as f64) * bin_width * (maximum as f64)).round() as usize;
+        BinCountRange { low, high }
+    }
+}
+
+impl Display for BinCountRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} - {}", self.low, self.high)
+    }
+}
+
 /// A cluster of span executions and a histogram of the timings observed.
 #[derive(Clone)]
 pub struct Cluster {
-    /// The human-readable name of the cluster.
-    pub name: String,
+    /// The ranges of expected counts for the steps in the cluster.
+    /// This is purely for humans to make sense of what this cluster represents.
+    pub bins: HashMap<&'static str, BinCountRange>,
     /// The histogram of timings (as micro-seconds).
     pub timing_micros: Histogram<u64>,
+}
+
+impl Cluster {
+    /// A human-readable name for the cluster.
+    pub fn name(&self) -> String {
+        self.bins
+            .iter()
+            .sorted_by_key(|(&label, _)| label)
+            .map(|(&label, &bin)| format!("({label}: {bin})"))
+            .join(",")
+    }
 }
 
 /// A learned classifier for a span type.
@@ -125,7 +162,12 @@ impl Classifier {
         let vector = self.to_vector(&span.child_counts);
         let bin_label = self.bin_label(vector_norm(&vector, &self.maxima));
         let cluster = self.clusters.entry(bin_label).or_insert_with(|| Cluster {
-            name: Self::label_cluster(bin_label, &self.maxima, &self.vector_labels, self.bin_width),
+            bins: Self::bins_for_cluster(
+                bin_label,
+                &self.maxima,
+                &self.vector_labels,
+                self.bin_width,
+            ),
             timing_micros: Histogram::new_with_bounds(1, u64::MAX, 3).unwrap(),
         });
         cluster
@@ -147,30 +189,23 @@ impl Classifier {
         (vector_norm / self.bin_width).round() as usize
     }
 
-    /// Construct a human-readable label for a cluster.
-    fn label_cluster(
+    /// Construct the bins for a cluster.
+    fn bins_for_cluster(
         bin_label: usize,
         maxima: &[usize],
         vector_labels: &[&'static str],
         bin_width: f64,
-    ) -> String {
+    ) -> HashMap<&'static str, BinCountRange> {
         vector_labels
             .iter()
             .zip(maxima.iter())
-            .map(|(&label, &maximum)| Self::label_for_range(label, bin_label, maximum, bin_width))
-            .join(",")
-    }
-
-    /// Construct a human-readable label for a range of execution counts in a given bin.
-    fn label_for_range(
-        label: &'static str,
-        bin_label: usize,
-        maximum: usize,
-        bin_width: f64,
-    ) -> String {
-        let low = (bin_label as f64) * bin_width * (maximum as f64);
-        let high = ((bin_label + 1) as f64) * bin_width * (maximum as f64);
-        format!("({label}: {low:.0} - {high:.0})")
+            .map(|(&label, &maximum)| {
+                (
+                    label,
+                    BinCountRange::from_bin_label(bin_label, maximum, bin_width),
+                )
+            })
+            .collect()
     }
 }
 
@@ -293,7 +328,7 @@ mod tests {
             .map(|c| {
                 format!(
                     "[{}: ({}, {}, {})]",
-                    c.name,
+                    c.name(),
                     c.timing_micros.min(),
                     c.timing_micros.mean(),
                     c.timing_micros.max()
@@ -323,7 +358,7 @@ mod tests {
         let clusters = classifier.clusters();
         let my_clusters = clusters.get("work").unwrap();
         assert_eq!(
-            "[(step: 0 - 2): (1, 1, 1)],[(step: 2 - 4): (2, 2.5, 3)],[(step: 4 - 7): (4, 4.5, 5)],[(step: 7 - 9): (6, 6.5, 7)],[(step: 9 - 11): (8, 9, 10)]",
+            "[(step: 0 - 2): (1, 1, 1)],[(step: 2 - 5): (2, 2.5, 3)],[(step: 5 - 7): (4, 4.5, 5)],[(step: 7 - 9): (6, 6.5, 7)],[(step: 9 - 11): (8, 9, 10)]",
             to_string(my_clusters)
         );
     }
