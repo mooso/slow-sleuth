@@ -28,16 +28,15 @@ impl WasmPark {
         let mut rng = thread_rng();
         let park = PolygonPark::new_random(&mut rng, width, height);
         let classifier = Arc::new(Mutex::new(SleuthClassifier::default()));
-        let sleuth = Sleuth::new(LockedClassifier {
-            classifier: classifier.clone(),
-        });
-        let subscriber = Registry::default().with(sleuth);
-        tracing::subscriber::set_global_default(subscriber).unwrap();
         WasmPark { park, classifier }
     }
 
     pub fn tick(&mut self, millis_elapsed: f32) {
-        self.park.tick(millis_elapsed);
+        let sleuth = Sleuth::new(LockedClassifier {
+            classifier: self.classifier.clone(),
+        });
+        let subscriber = Registry::default().with(sleuth);
+        tracing::subscriber::with_default(subscriber, || self.park.tick(millis_elapsed));
     }
 
     pub fn num_polygons(&self) -> usize {
@@ -71,27 +70,18 @@ impl WasmPark {
     }
 
     pub fn tick_cluster_label_range(&self, cluster_index: usize, label: &str) -> String {
-        self.classifier
-            .lock()
-            .unwrap()
-            .clusters()
-            .get("tick")
-            .unwrap()[cluster_index]
-            .bins
-            .get(label)
-            .map(|b| format!("{b}"))
-            .unwrap_or_default()
+        let classifier = self.classifier.lock().unwrap();
+        let clusters = classifier.clusters();
+        let cluster = &clusters.get("tick").unwrap()[cluster_index];
+        let bin = cluster.bins.get(label);
+        bin.map(|b| format!("{b}")).unwrap_or_default()
     }
 
     pub fn tick_cluster_micros_quantile(&self, cluster_index: usize, quantile: f64) -> u64 {
-        self.classifier
-            .lock()
-            .unwrap()
-            .clusters()
-            .get("tick")
-            .unwrap()[cluster_index]
-            .timing_micros
-            .value_at_quantile(quantile)
+        let classifier = self.classifier.lock().unwrap();
+        let clusters = classifier.clusters();
+        let cluster = &clusters.get("tick").unwrap()[cluster_index];
+        cluster.timing_micros.value_at_quantile(quantile)
     }
 }
 
@@ -107,5 +97,15 @@ mod tests {
         assert!(park.num_vertices(0) > 0);
         assert!(park.vertix_x(0, 0) >= 0. && park.vertix_x(0, 0) <= 100.);
         assert!(park.vertix_y(0, 0) >= 0. && park.vertix_y(0, 0) <= 100.);
+    }
+
+    #[test]
+    fn tick_clusters() {
+        let mut park = WasmPark::new(100., 100.);
+        for _ in 0..100 {
+            park.tick(10.);
+        }
+        assert!(park.num_tick_clusters() > 0);
+        // TODO: Once I actually do work in tick, assert some more things about the actual steps in there.
     }
 }
