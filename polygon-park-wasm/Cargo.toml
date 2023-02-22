@@ -16,3 +16,5 @@ slow-sleuth = { path = '../slow-sleuth' }
 wasm-bindgen = { version = "0.2" }
 getrandom = { version = "0.2", features = ["js"] }
 rand = { version = "0.8" }
+tracing = { version = "0" }
+tracing-subscriber = { version = "0", features = ["std"] }
