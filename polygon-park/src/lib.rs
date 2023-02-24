@@ -23,6 +23,17 @@ impl ops::Sub for Point {
     }
 }
 
+
+impl ops::Add for Point {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Point {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
 impl ops::Neg for Point {
     type Output = Self;
 
@@ -204,34 +215,51 @@ impl PolygonPark {
     /// Generate a new random park (full of exciting random polygons) of the given width/height.
     pub fn new_random<R: Rng>(_rng: &mut R, width: f32, height: f32) -> PolygonPark {
         // TODO: Actually randomly generate
-        let square = Polygon {
-            vertices: vec![
-                Point { x: 25., y: 5. },
-                Point { x: 35., y: 5. },
-                Point { x: 35., y: 15. },
-                Point { x: 25., y: 15. },
-            ],
-        };
-        let square = MovingPolygon {
-            geometry: square,
-            mass: 10.0,
-            color: 0x00DD00,
-            velocity: Default::default(),
-        };
+
+	let mut squares: Vec<MovingPolygon> = Vec::new();
+
+	for _ in 0..16 {
+
+		let square_length = _rng.gen_range(10f32..50f32);
+
+		let square_top_left = Point { x: _rng.gen_range(0f32..width - square_length), y: _rng.gen_range(0f32..height - square_length) };
+
+		let square = Polygon {
+			vertices: vec![
+				square_top_left,
+				square_top_left + Point { x: square_length, y: 0. },
+				square_top_left + Point { x: square_length, y: square_length },
+				square_top_left + Point { x: 0., y: square_length },
+
+		      ],
+		  };
+
+		let square = MovingPolygon {
+		    geometry: square,
+		    mass: 10.0,
+		    //color: 0x00DD00,
+                    color: _rng.gen_range(u32::MIN..u32::MAX),
+		    velocity: Point { x: _rng.gen_range(-20f32..20f32), y: _rng.gen_range(-20f32..20f32) },
+		};
+
+		squares.push(square);
+	}
+
         PolygonPark {
-            polygons: vec![square],
+            polygons: squares,
             width,
             height,
         }
     }
 
     /// Tick the park - simulate the movement by advancing time by the given number of milli-seconds.
-    #[instrument]
+    // TODO I commented out the instrument attribute for testing
+    //#[instrument]
     pub fn tick(&mut self, millis_elapsed: f32) {
         // TODO: Actually simulate
         for polygon in self.polygons.iter_mut() {
             for vertex in polygon.geometry.vertices.iter_mut() {
-                vertex.x += millis_elapsed / 10.;
+		*vertex = *vertex + polygon.velocity * millis_elapsed / 1000.;
             }
         }
     }
