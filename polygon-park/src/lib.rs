@@ -155,7 +155,8 @@ impl Polygon {
     }
 
     /// Project the polygon onto a given axis.
-    #[instrument]
+    // TODO I commented out the instument attribute for testing
+    //#[instrument]
     pub fn project(&self, axis: Point) -> Projection {
         let mut min = axis.dot(self.vertices.first().unwrap());
         let mut max = min;
@@ -211,16 +212,41 @@ pub struct PolygonPark {
     pub height: f32,
 }
 
+fn signum(input: f32) -> f32 {
+    if input < 0. {
+        return -1.;
+    }
+    else if input == 0. {
+        return 0. ;
+    }
+    else {
+        return 1.;
+    }
+}
+
+/// Sets sign of input to sign of sign
+fn ensure_sign(input: &mut f32, sign: f32) {
+    if signum(*input) != signum(sign) {
+        *input *= -1.;
+    }
+}
+
 impl PolygonPark {
     /// Generate a new random park (full of exciting random polygons) of the given width/height.
     pub fn new_random<R: Rng>(_rng: &mut R, width: f32, height: f32) -> PolygonPark {
         // TODO: Actually randomly generate
 
+    const NUM_POLYGONS: u32 = 16;
+
+    const POSSIBLE_SQUARE_LENGTH: std::ops::Range<f32> = std::ops::Range { start: 10., end: 50. };
+
+    const POSSIBLE_VELOCITY: std::ops::Range<f32> = std::ops::Range { start: -100., end: 100. };
+
 	let mut squares: Vec<MovingPolygon> = Vec::new();
 
-	for _ in 0..16 {
+	for _ in 0..NUM_POLYGONS {
 
-		let square_length = _rng.gen_range(10f32..50f32);
+		let square_length = _rng.gen_range(POSSIBLE_SQUARE_LENGTH);
 
 		let square_top_left = Point { x: _rng.gen_range(0f32..width - square_length), y: _rng.gen_range(0f32..height - square_length) };
 
@@ -239,7 +265,7 @@ impl PolygonPark {
 		    mass: 10.0,
 		    //color: 0x00DD00,
                     color: _rng.gen_range(u32::MIN..u32::MAX),
-		    velocity: Point { x: _rng.gen_range(-20f32..20f32), y: _rng.gen_range(-20f32..20f32) },
+		    velocity: Point { x: _rng.gen_range(POSSIBLE_VELOCITY), y: _rng.gen_range(POSSIBLE_VELOCITY) },
 		};
 
 		squares.push(square);
@@ -257,11 +283,40 @@ impl PolygonPark {
     //#[instrument]
     pub fn tick(&mut self, millis_elapsed: f32) {
         // TODO: Actually simulate
-        for polygon in self.polygons.iter_mut() {
+
+        for i in 0..self.polygons.len()
+        {
+            for j in (i + 1)..self.polygons.len()
+            {
+                if self.polygons[i].geometry.check_collision(&self.polygons[j].geometry)
+                {
+                    self.polygons[i].color = 0xFFFF0000;
+                    self.polygons[j].color = 0xFFFF0000;
+                }
+            }
+
+            let polygon = &mut self.polygons[i];
+
+
+            // translate
             for vertex in polygon.geometry.vertices.iter_mut() {
-		*vertex = *vertex + polygon.velocity * millis_elapsed / 1000.;
+                
+                *vertex = *vertex + polygon.velocity * millis_elapsed / 1000.;
+                //vertex.y += 1.;
+            }
+
+            // handle collision with edge separately
+            for vertex in polygon.geometry.vertices.iter_mut() {
+                if vertex.x < 0. || vertex.x > self.width { // colliding with left or right edge
+                    ensure_sign(&mut polygon.velocity.x, -vertex.x);
+                }
+
+                if vertex.y < 0. || vertex.y > self.height { // colliding with bottom or top edge
+                    ensure_sign(&mut polygon.velocity.y, -vertex.y);
+                }
             }
         }
+
     }
 }
 
