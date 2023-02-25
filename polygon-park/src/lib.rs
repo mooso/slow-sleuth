@@ -171,21 +171,38 @@ impl Polygon {
         Projection { min, max }
     }
 
-    /// Check if this polygon collides with another given polygon. Returns false if not colliding.
-    pub fn check_collision(&self, other: &Self) -> bool {
+    /// Check if this polygon collides with another given polygon. Returns the minimum translation vector if a collision exists.
+    pub fn get_mtv(&self, other: &Self) -> Option<Point> {
         // Check using an SAT (Separating Axis Theorem) algorithm.
         // See e.g. https://dyn4j.org/2010/01/sat/ for a description.
+
+        let mut min_distance = f32::MAX;
+        let mut mtv_direction = Point { x: 0., y: 0. };
+
         for edge in self.edges().chain(other.edges()) {
-            let axis = edge.normal();
+            let axis = edge.normal().normalize();
             let p1 = self.project(axis);
             let p2 = other.project(axis);
-            if p1.overlap(&p2).is_none() {
+            let overlap = p1.overlap(&p2);
+            if overlap.is_none() {
                 // If we find one axis in which the projections of the shapes don't overlap, they're not in collision
-                return false;
+                return None;
+            }
+
+            let overlap_length = overlap.unwrap().max - overlap.unwrap().min;
+            if overlap_length < min_distance {
+                min_distance = overlap_length;
+                mtv_direction = axis;
             }
         }
-        true
+        return Some(mtv_direction * min_distance);
     }
+
+    /// Check if this polygon collides with another given polygon. Returns false if not colliding.
+    pub fn check_collision(&self, other: &Self) -> bool {
+        return self.get_mtv(other).is_some();
+    }
+
 }
 
 /// A polygon in the park, that can move around.
@@ -237,25 +254,10 @@ fn translate_polygon(polygon: &mut Polygon, translation: Point) {
     }
 }
 
-/// Returns center of polygon
-fn average_point(polygon: &Polygon) -> Point {
-    let mut accumulator = Point{ x: 0., y: 0. };
-
-    for vertex in &polygon.vertices {
-        accumulator = accumulator + *vertex;
-    }
-
-    return accumulator / polygon.vertices.len() as f32;
-}
-
-/// Return in_vector reflected about normal_vector. Expects normal_vector to be normalized
-fn reflect_vector(in_vector: &Point, normal_vector: &Point) -> Point {
-    return *in_vector - (*normal_vector * 2. * normal_vector.dot(in_vector));
-}
-
-/// Linearly interpolates between a and b according to alpha. expects 0 <= alpha <= 1
-fn lerp<T: std::ops::Mul<f32, Output = T> + std::ops::Add<T, Output = T> >(a: T, b: T, alpha: f32) -> T {
-    return a * alpha + b * (1. - alpha);
+/// Resolves collision specified by mtv by moving penetrating_polygon outside of second_polygon
+fn resolve_collision(penetrating_polygon: &mut Polygon, second_polygon: Polygon, mtv: Point) {
+    let difference = penetrating_polygon.vertices[0] - second_polygon.vertices[0];
+    translate_polygon(penetrating_polygon, mtv * signum(difference.dot(&mtv)) * 1.);
 }
 
 impl PolygonPark {
@@ -298,6 +300,30 @@ impl PolygonPark {
 		squares.push(square);
 	}
 
+		let square_length = 100.;
+
+		let square_top_left = Point{x: 250. - 75. / 2., y: 250. - 75. / 2.};
+
+		let square = Polygon {
+			vertices: vec![
+				square_top_left,
+				square_top_left + Point { x: square_length, y: 0. },
+				square_top_left + Point { x: square_length, y: square_length },
+				square_top_left + Point { x: 0., y: square_length },
+
+		      ],
+		  };
+
+		let square = MovingPolygon {
+		    geometry: square,
+		    mass: square_length / 2.,
+		    //color: 0x00DD00,
+                    color: _rng.gen_range(u32::MIN..u32::MAX),
+		    velocity: Point { x: 0., y: 0.},
+		};
+
+		squares.push(square);
+
         PolygonPark {
             polygons: squares,
             width,
@@ -318,25 +344,16 @@ impl PolygonPark {
             // collision between polygons and other polygons
             for j in (i + 1)..self.polygons.len()
             {
-                if self.polygons[i].geometry.check_collision(&self.polygons[j].geometry)
+                let collision_mtv = self.polygons[i].geometry.get_mtv(&self.polygons[j].geometry);
+                if collision_mtv.is_some()
                 {
                     self.polygons[i].color = 0xFFFF0000;
-                    self.polygons[j].color = 0xFFFF0000;
+                    self.polygons[j].color = 0xFF00FF00;
 
-                    let polygon_center = average_point(&self.polygons[i].geometry);
-                    let other_polygon_center = average_point(&self.polygons[j].geometry);
-
-                    let difference = other_polygon_center - polygon_center;
-                    translate_polygon(&mut self.polygons[i].geometry, -difference.normalize() * 1.);
-                    translate_polygon(&mut self.polygons[j].geometry, difference.normalize() * 1.);
-
-                    let old_velocity0 = self.polygons[i].velocity.clone();
-                    let old_velocity1 = self.polygons[j].velocity.clone();
+                    let second_polygon = self.polygons[j].geometry.clone();
+                    resolve_collision(&mut self.polygons[i].geometry, second_polygon, collision_mtv.unwrap());
 
                     let mass_ratio = self.polygons[j].mass / self.polygons[i].mass;
-
-                    //self.polygons[i].velocity = old_velocity1 * mass_ratio;
-                    //self.polygons[j].velocity = old_velocity0 * 1. / mass_ratio; 
 
                     let temp = self.polygons[i].velocity;
                     self.polygons[i].velocity = self.polygons[j].velocity * mass_ratio;
@@ -349,6 +366,7 @@ impl PolygonPark {
                 let polygon = &mut self.polygons[i];
                 translate_polygon(&mut polygon.geometry, polygon.velocity * millis_elapsed / 1000.);
             }
+
 
             // collisions between polygons and park edges
             for j in 0..self.polygons[i].geometry.vertices.len() {
