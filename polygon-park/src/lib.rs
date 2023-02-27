@@ -257,75 +257,75 @@ fn translate_polygon(polygon: &mut Polygon, translation: Point) {
 /// Resolves collision specified by mtv by moving penetrating_polygon outside of second_polygon
 fn resolve_collision(penetrating_polygon: &mut Polygon, second_polygon: Polygon, mtv: Point) {
     let difference = penetrating_polygon.vertices[0] - second_polygon.vertices[0];
-    translate_polygon(penetrating_polygon, mtv * signum(difference.dot(&mtv)) * 1.);
+    translate_polygon(penetrating_polygon, mtv * signum(difference.dot(&mtv)) * 0.95);
+}
+
+fn generate_square<R: Rng>(_rng: &mut R, top_left_position: Point, length: f32) -> Polygon {
+
+    let square = Polygon {
+        vertices: vec![
+            top_left_position,
+            top_left_position + Point { x: length, y: 0. },
+            top_left_position + Point { x: length, y: length },
+            top_left_position + Point { x: 0., y: length },
+
+          ],
+      };
+
+    return square;
+}
+
+fn generate_polygon<R: Rng>(_rng: &mut R, center_position: Point, radius: f32) -> Polygon {
+
+    const NUM_VERTICES: u32 = 64;
+    const STEP_RADIANS: f32 = 2. * std::f32::consts::PI / NUM_VERTICES as f32;
+    const TERMINATION_PROBABILITY: f32 = 0.9;
+
+    let mut success = false;
+    let mut verts: Vec<Point> = Vec::new();
+
+    // generate NUM_VERTICES placed on a circle. Randomly delete some vertices to create unique convex shapes .
+
+    while !success {
+        verts.clear();
+        for i in 0..NUM_VERTICES {
+            if _rng.gen_range(0f32..1f32) > TERMINATION_PROBABILITY {
+                let vert = center_position + Point { x: f32::cos(i as f32 * STEP_RADIANS), y: f32::sin(i as f32 * STEP_RADIANS) } * radius;
+                verts.push(vert);
+            }
+        }
+
+        success = verts.len() >= 3;
+    }
+
+    return Polygon { vertices: verts };
 }
 
 impl PolygonPark {
     /// Generate a new random park (full of exciting random polygons) of the given width/height.
     pub fn new_random<R: Rng>(_rng: &mut R, width: f32, height: f32) -> PolygonPark {
-        // TODO: Actually randomly generate
+        const NUM_POLYGONS: u32 = 16;
+        const POSSIBLE_VELOCITY: std::ops::Range<f32> = std::ops::Range { start: -100., end: 100. };
+        const POSSIBLE_RADIUS: std::ops::Range<f32> = std::ops::Range { start: 10., end: 50. };
 
-    const NUM_POLYGONS: u32 = 16;
+        let mut polygons: Vec<MovingPolygon> = Vec::new();
 
-    const POSSIBLE_SQUARE_LENGTH: std::ops::Range<f32> = std::ops::Range { start: 10., end: 50. };
+        for _ in 0..NUM_POLYGONS {
+            let polygon_radius = _rng.gen_range(POSSIBLE_RADIUS);
+            let polygon_center = Point { x: _rng.gen_range(0f32..width - polygon_radius), y: _rng.gen_range(0f32..height - polygon_radius) };
 
-    const POSSIBLE_VELOCITY: std::ops::Range<f32> = std::ops::Range { start: -100., end: 100. };
+            let polygon = MovingPolygon {
+                geometry: generate_polygon(_rng, polygon_center, polygon_radius),
+                mass: polygon_radius / 2.,
+                color: _rng.gen_range(u32::MIN..u32::MAX),
+                velocity: Point { x: _rng.gen_range(POSSIBLE_VELOCITY), y: _rng.gen_range(POSSIBLE_VELOCITY) },
+            };
 
-	let mut squares: Vec<MovingPolygon> = Vec::new();
-
-	for _ in 0..NUM_POLYGONS {
-
-		let square_length = _rng.gen_range(POSSIBLE_SQUARE_LENGTH);
-
-		let square_top_left = Point { x: _rng.gen_range(0f32..width - square_length), y: _rng.gen_range(0f32..height - square_length) };
-
-		let square = Polygon {
-			vertices: vec![
-				square_top_left,
-				square_top_left + Point { x: square_length, y: 0. },
-				square_top_left + Point { x: square_length, y: square_length },
-				square_top_left + Point { x: 0., y: square_length },
-
-		      ],
-		  };
-
-		let square = MovingPolygon {
-		    geometry: square,
-		    mass: square_length / 2.,
-		    //color: 0x00DD00,
-                    color: _rng.gen_range(u32::MIN..u32::MAX),
-		    velocity: Point { x: _rng.gen_range(POSSIBLE_VELOCITY), y: _rng.gen_range(POSSIBLE_VELOCITY) },
-		};
-
-		squares.push(square);
-	}
-
-		let square_length = 100.;
-
-		let square_top_left = Point{x: 250. - 75. / 2., y: 250. - 75. / 2.};
-
-		let square = Polygon {
-			vertices: vec![
-				square_top_left,
-				square_top_left + Point { x: square_length, y: 0. },
-				square_top_left + Point { x: square_length, y: square_length },
-				square_top_left + Point { x: 0., y: square_length },
-
-		      ],
-		  };
-
-		let square = MovingPolygon {
-		    geometry: square,
-		    mass: square_length / 2.,
-		    //color: 0x00DD00,
-                    color: _rng.gen_range(u32::MIN..u32::MAX),
-		    velocity: Point { x: 0., y: 0.},
-		};
-
-		squares.push(square);
+            polygons.push(polygon);
+        }
 
         PolygonPark {
-            polygons: squares,
+            polygons: polygons,
             width,
             height,
         }
@@ -336,7 +336,6 @@ impl PolygonPark {
     // TODO I commented out the instrument attribute for testing
     //#[instrument]
     pub fn tick(&mut self, millis_elapsed: f32) {
-        // TODO: Actually simulate
 
         for i in 0..self.polygons.len()
         {
@@ -347,9 +346,6 @@ impl PolygonPark {
                 let collision_mtv = self.polygons[i].geometry.get_mtv(&self.polygons[j].geometry);
                 if collision_mtv.is_some()
                 {
-                    self.polygons[i].color = 0xFFFF0000;
-                    self.polygons[j].color = 0xFF00FF00;
-
                     let second_polygon = self.polygons[j].geometry.clone();
                     resolve_collision(&mut self.polygons[i].geometry, second_polygon, collision_mtv.unwrap());
 
