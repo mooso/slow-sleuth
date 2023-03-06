@@ -155,8 +155,7 @@ impl Polygon {
     }
 
     /// Project the polygon onto a given axis.
-    // TODO I commented out the instument attribute for testing
-    //#[instrument]
+    #[instrument]
     pub fn project(&self, axis: Point) -> Projection {
         let mut min = axis.dot(self.vertices.first().unwrap());
         let mut max = min;
@@ -333,8 +332,7 @@ impl PolygonPark {
 
 
     /// Tick the park - simulate the movement by advancing time by the given number of milli-seconds.
-    // TODO I commented out the instrument attribute for testing
-    //#[instrument]
+    #[instrument]
     pub fn tick(&mut self, millis_elapsed: f32) {
 
         for i in 0..self.polygons.len()
